@@ -97,16 +97,11 @@ class FWAlbum(object):
         self.libraries = libraries_ids
         return libraries_ids
 
-
-
-def update(fields, query, uids=None):
-    if uids:
-        return db.update(fields, doc_ids=uids)
-    else:
-        return db.update(fields, query)
-
 def get(query):
     return FWAlbum(db.get(query))
+
+def reset():
+    db.truncate()
 
 def set_libraries(doc):  
     libraries_url = f"{doc['instance_url']}/api/v1/albums/{doc['fw_id']}/libraries"

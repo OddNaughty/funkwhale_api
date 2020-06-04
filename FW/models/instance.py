@@ -4,6 +4,7 @@ from tinydb import where
 
 from FW.app import db_root
 from FW.models.exceptions import FWIdAlreadySet
+from FW.models.album import FWAlbumFactory
 
 db = db_root.table("instance")
 
@@ -81,3 +82,17 @@ class FWInstance():
         else: 
             self._uid = self.db.insert(self.__db_repr__())
         return self._uid
+
+def reset():
+    db.truncate()
+
+def populate_instances():
+    factory = FWInstanceFactory()
+    return factory.populate_db()
+
+def populate_albums():
+    factory = FWInstanceFactory()
+    for instance in factory.all():
+        f2 = FWAlbumFactory(instance)
+        f2.populate_db()
+    
