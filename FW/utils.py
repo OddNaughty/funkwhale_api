@@ -23,7 +23,7 @@ def crawl_endpoint(start_url, prefix=""):
             error_log("[Connection Refused] Url: {}".format(next_page))
             break
         if req.status_code != 200:
-            handle_error_request(req, "Album")
+            handle_error_request(req, prefix)
             break
         res = req.json()
         yield res["results"]

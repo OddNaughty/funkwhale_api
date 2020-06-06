@@ -48,7 +48,7 @@ class Album:
 
 class MyFunkwhaleInstance:
     def __init__(self, login, password):
-        self.token = {'token': ''}
+        self.token = {'jwt': ''}
         self.credentials = {'username': login, 'password': password}
 
         self.connect()

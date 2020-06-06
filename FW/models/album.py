@@ -5,10 +5,9 @@ import requests
 from tinydb import where
 
 
-import FW.utils
-
 from FW.app import db_root
 from FW.models.exceptions import FWDBUpdateErrorNoId
+import FW.utils
 
 db = db_root.table("album")
 
@@ -106,8 +105,11 @@ def reset():
 def set_libraries(doc):  
     libraries_url = f"{doc['instance_url']}/api/v1/albums/{doc['fw_id']}/libraries"
     libraries = functools.reduce(operator.iconcat, FW.utils.crawl_endpoint(libraries_url, "Album Libraries"))
-    libraries_ids = [library["uuid"] for library in libraries]
+    libraries_ids = [library["fid"] for library in libraries]
     doc["libraries"] = libraries_ids
 
 def update_libraries():
-    db.update(set_libraries, ~ (where("libraries").exists()))
+    for album in db.search(~ where("libraries").exists()):
+        db.update(set_libraries, doc_ids=[album.doc_id])
+
+    # db.update(set_libraries, ~ (where("libraries").exists()))
