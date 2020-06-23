@@ -9,7 +9,7 @@ import aiohttp
 from asyncio import Task
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s,%(msecs)d %(levelname)s: %(message)s",
     datefmt="%H:%M:%S",
 )
@@ -18,6 +18,11 @@ logging.basicConfig(
 class RateLimitReached(Exception):
     pass
 
+class Gathered(object):
+
+    def __init__(self, urls):
+        self.pending_urls = [urls]
+        self.finished_urls = []
 
 async def clean_pending_tasks(caller):
     logging.info("CLEANING TASKS")
@@ -51,42 +56,68 @@ def handle_rate_limit_exception(loop, context):
         logging.info("Creating shutdown task")
         asyncio.create_task(shutdown(loop))
 
-async def fetch_real_url(session, url, params=None):
-    if params["page"] == 2:
-        await asyncio.sleep(2)
-        raise RateLimitReached
-    async with session.get(url, params=params, raise_for_status=True) as req:
+async def fetch_real_url(session, url, page=1):
+    # if page == 2:
+        # await asyncio.sleep(1)
+        # raise RateLimitReached
+    async with session.get(url, params={"page": page}, raise_for_status=True) as req:
         logging.info("Getting url: {}".format(req.url))
         res = await req.json()
-        logging.info("headers: {}".format(req.headers))
+        # logging.info("headers: {}".format(req.headers))
         if req.headers["x-ratelimit-remaining"] == 0:
             raise RateLimitReached 
         albums_ids = [a["id"] for a in res["results"]]
-        return albums_ids
+        return (url, page, albums_ids)
 
 async def fetch_until_ratelimit(session):
-    albums_ids = []
-    for r in asyncio.as_completed(set([fetch_real_url(session, "https://open.audio/api/v1/albums", params={"page": n}) for n in range(1, 6)])):
+    url_to_fetch = {
+        ("https://open.audio/api/v1/albums", n): None for n in range(1, 6)
+    }
+    tasks = [asyncio.create_task(fetch_real_url(session, "https://open.audio/api/v1/albums", n)) for n in range(1, 6)]
+    for r in asyncio.as_completed(set(tasks)):
         try:
-            res = await r
+            (url, page, ids) = await r
+            url_to_fetch[url, page] = ids
         except RateLimitReached:
             logging.error("RATE LIMIT REACHED MUAHAHA")
-            return (False, albums_ids)
-        albums_ids.extend(res)
-    return (True, albums_ids)
+            return (False, url_to_fetch)
+        except Exception as e:
+            logging.error(e)
+            raise e
+    return (True, url_to_fetch)
+
+    # done, pending = await asyncio.wait(set([fetch_real_url(session, "https://open.audio/api/v1/albums", params={"page": n}) for n in range(1, 6)]), return_when=asyncio.FIRST_EXCEPTION)
+    # logging.debug(done)
+    # logging.debug(pending)
+    # return (done, pending)
+    # albums_ids = []
+    # for r in asyncio.as_completed(set([fetch_real_url(session, "https://open.audio/api/v1/albums", params={"page": n}) for n in range(1, 6)])):
+    #     try:
+    #         res = await r
+    #     except RateLimitReached:
+    #         logging.error("RATE LIMIT REACHED MUAHAHA")
+    #         return (False, albums_ids)
+    #     albums_ids.extend(res)
+    # return (True, albums_ids)
 
 
-async def sup_supervisor():
+async def launch_album_crawl():
+    albums_ids = []
     async with aiohttp.ClientSession() as session:
-        success, albums_ids = await fetch_until_ratelimit(session)
+        success, url_to_fetch = await fetch_until_ratelimit(session)
         if success:
             logging.info("SUCCEEEESSS WITHOUT RATELIMITED")
+            return 
         else:
             logging.error("YES, WE HAVE BEEN RATELIMITED")
-            # await clean_pending_tasks(asyncio.current_task())
+            await clean_pending_tasks(asyncio.current_task())
             await shutdown(asyncio.get_event_loop())
     logging.info("Albums_ids: {}".format(albums_ids))
 
+async def recursive_one(iteration):
+    logging.info("Waiting iteration {}".format(iteration))
+    await asyncio.sleep(0.01)
+    return await asyncio.gather(recursive_one(iteration+1))
 
 def main():
     # TODO: Use asyncio.wait(FIRST_EXCEPTION ?)
@@ -99,9 +130,11 @@ def main():
         )
     loop.set_exception_handler(handle_rate_limit_exception)
     try:
-        loop.run_until_complete(sup_supervisor())
+        loop.run_until_complete(launch_album_crawl())
+        # loop.create_task(recursive_one(0))
+        # loop.run_forever()
     except asyncio.CancelledError:
-        logging.error("That's very bad this task was cancelled...")
+        logging.error("It's very bad this task was cancelled...")
     finally:
         loop.close()
         logging.info("THIS IS OVER")
